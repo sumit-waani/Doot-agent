@@ -25,12 +25,11 @@ new, separate, minimal loop for light work.** Kaptaan stays untouched.
 
 ## Model & SDK Choices
 
-| Concern | Decision | Reasoning |
-|---|---|---|
-| Primary LLM | **Muse Spark 1.2** (Meta Model API, standard tier) | Cheap ($1.25/M in, $4.25/M out), 1M context, coding-optimized, OpenAI-SDK compatible. Standard tier (not `contributor`) — contributor tier trains on prompts/completions, which is a data-governance call, not a cost call. Revisit only with explicit legal/data sign-off. |
-| SDK for LLM calls | **OpenAI SDK** (pointed at Meta Model API base URL) | Avoids reinventing an Anthropic-specific integration for a model that already speaks OpenAI-compatible API. Chinese models intentionally avoided (trust concerns). |
-| Subagent models | **Same model (Muse Spark 1.2) for everything** — reviewer, E2E/computer-use agent, compression calls | No benefit to juggling multiple providers' quirks to save marginal cost. Model is multimodal, handles computer-use images natively. Costs are acceptable — this replaces manual hours. |
-| Anthropic routing | **None.** New loop never routes to Anthropic. | Keeps clean differentiation from kaptaan. Mixing them back together reintroduces the original "which agent do I even use" confusion. |
+| Concern | Decision |
+|---|---|
+| Primary LLM | **Muse Spark 1.2** (Meta Model API, standard tier) | 
+| SDK for LLM calls | **OpenAI SDK** (pointed at Meta Model API base URL) |
+| Subagent models | **Same model (Muse Spark 1.2) for everything** — reviewer, E2E/computer-use agent, compression calls |
 
 ---
 
