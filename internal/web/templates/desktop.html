@@ -1,0 +1,37 @@
+{{define "content"}}
+<header class="screen-header">
+  <h1>Desktop</h1>
+  {{if .Project.SandboxState}}
+  <span class="pill pill-{{.Project.SandboxState}}">{{.Project.SandboxState}}</span>
+  {{else}}
+  <span class="pill pill-idle">no sandbox</span>
+  {{end}}
+</header>
+
+{{if .Ready}}
+<div class="vnc-frame">
+  <iframe src="{{.VNCURL}}" title="Sandbox desktop" allow="clipboard-read; clipboard-write"></iframe>
+</div>
+<div class="vnc-controls">
+  <label class="toggle">
+    <input type="checkbox" id="take-control">
+    <span>Take control</span>
+  </label>
+  <p class="hint">Read-only by default, so you can watch without fighting the agent for the mouse.</p>
+</div>
+{{else}}
+<div class="empty">
+  <div class="empty-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 20h6M12 17v3"/></svg>
+  </div>
+  <h2>Desktop not running</h2>
+  {{if not .Project.Exists}}
+  <p>Create a project first. The desktop lives in the same sandbox as the project.</p>
+  <a href="/project" class="btn btn-primary">Create project</a>
+  {{else}}
+  <p>Computer-use processes are not running in the sandbox. They do not survive a sandbox stop and need starting again.</p>
+  <button type="button" class="btn btn-primary" id="start-desktop">Start desktop</button>
+  {{end}}
+</div>
+{{end}}
+{{end}}

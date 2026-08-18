@@ -1,0 +1,213 @@
+{{define "content"}}
+<header class="screen-header">
+  <h1>Settings</h1>
+</header>
+
+{{if .Saved}}
+<p class="alert alert-ok" role="status">Saved {{.Saved}}.</p>
+{{end}}
+{{if .Error}}
+<p class="alert alert-error" role="alert">{{.Error}}</p>
+{{end}}
+
+<p class="screen-note">This is also the setup screen. It is usable while half-configured — fill in what you have.</p>
+
+<section class="card">
+  <h2 class="card-title">Account</h2>
+  <form method="post" action="/settings/account" class="form">
+    <label class="field">
+      <span class="field-label">Username</span>
+      <input type="text" name="username" value="{{.User.Username}}"
+             autocapitalize="none" spellcheck="false" autocomplete="username">
+    </label>
+
+    <label class="field">
+      <span class="field-label">Current password</span>
+      <input type="password" name="current_password" autocomplete="current-password">
+    </label>
+
+    <label class="field">
+      <span class="field-label">New password</span>
+      <input type="password" name="new_password" autocomplete="new-password">
+      <span class="field-hint">Leave blank to keep the current password. Changing it signs out every device.</span>
+    </label>
+
+    <button type="submit" class="btn btn-primary">Save account</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Model</h2>
+  <form method="post" action="/settings/model" class="form">
+    <label class="field">
+      <span class="field-label">Model</span>
+      <input type="text" name="llm.model" value="{{index .Settings "llm.model"}}" spellcheck="false">
+    </label>
+
+    <label class="field">
+      <span class="field-label">Base URL</span>
+      <input type="url" name="llm.base_url" value="{{index .Settings "llm.base_url"}}"
+             spellcheck="false" autocapitalize="none">
+    </label>
+
+    <div class="field-row">
+      <label class="field">
+        <span class="field-label">Context window</span>
+        <input type="number" name="llm.context_window" value="{{index .Settings "llm.context_window"}}" min="1024">
+      </label>
+      <label class="field">
+        <span class="field-label">Max output</span>
+        <input type="number" name="llm.max_output_tokens" value="{{index .Settings "llm.max_output_tokens"}}" min="256">
+      </label>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save model</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Agent</h2>
+  <form method="post" action="/settings/agent" class="form">
+    <label class="field">
+      <span class="field-label">System prompt</span>
+      <textarea name="agent.system_prompt" rows="8" spellcheck="false">{{index .Settings "agent.system_prompt"}}</textarea>
+    </label>
+
+    <label class="field field-narrow">
+      <span class="field-label">Compact at (%)</span>
+      <input type="number" name="agent.compact_threshold_pct"
+             value="{{index .Settings "agent.compact_threshold_pct"}}" min="10" max="99">
+    </label>
+
+    <label class="toggle">
+      <input type="checkbox" name="agent.reviewer_enabled" value="1"
+             {{if eq (index .Settings "agent.reviewer_enabled") "1"}}checked{{end}}>
+      <span>Semantic reviewer after each phase</span>
+    </label>
+
+    <label class="toggle">
+      <input type="checkbox" name="agent.e2e_enabled" value="1"
+             {{if eq (index .Settings "agent.e2e_enabled") "1"}}checked{{end}}>
+      <span>End-to-end verification via computer-use</span>
+    </label>
+
+    <button type="submit" class="btn btn-primary">Save agent</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Sandbox defaults</h2>
+  <form method="post" action="/settings/sandbox" class="form">
+    <label class="field">
+      <span class="field-label">Snapshot</span>
+      <input type="text" name="sandbox.snapshot" value="{{index .Settings "sandbox.snapshot"}}" spellcheck="false">
+      <span class="field-hint"><code>daytona-medium</code> is 2 vCPU / 4 GiB / 8 GiB. Must be a default Daytona image, or computer-use will not work.</span>
+    </label>
+
+    <div class="field-row">
+      <label class="field">
+        <span class="field-label">Auto-stop (min)</span>
+        <input type="number" name="sandbox.auto_stop_minutes"
+               value="{{index .Settings "sandbox.auto_stop_minutes"}}" min="0">
+      </label>
+      <label class="field">
+        <span class="field-label">VNC resolution</span>
+        <input type="text" name="sandbox.vnc_resolution"
+               value="{{index .Settings "sandbox.vnc_resolution"}}" spellcheck="false">
+      </label>
+    </div>
+    <p class="field-hint">Resolution applies to newly created sandboxes only.</p>
+
+    <button type="submit" class="btn btn-primary">Save sandbox</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Git &amp; GitHub</h2>
+  <form method="post" action="/settings/git" class="form">
+    <label class="field">
+      <span class="field-label">GitHub username</span>
+      <input type="text" name="github.username" value="{{index .Settings "github.username"}}"
+             autocapitalize="none" spellcheck="false">
+    </label>
+
+    <div class="field-row">
+      <label class="field">
+        <span class="field-label">Commit author</span>
+        <input type="text" name="git.author_name" value="{{index .Settings "git.author_name"}}" spellcheck="false">
+      </label>
+      <label class="field">
+        <span class="field-label">Author email</span>
+        <input type="email" name="git.author_email" value="{{index .Settings "git.author_email"}}" spellcheck="false">
+      </label>
+    </div>
+
+    <label class="field">
+      <span class="field-label">Work branch</span>
+      <input type="text" name="git.work_branch" value="{{index .Settings "git.work_branch"}}" spellcheck="false">
+      <span class="field-hint">All work happens on this one branch. <code>main</code> is never committed to.</span>
+    </label>
+
+    <label class="toggle">
+      <input type="checkbox" name="github.create_pr" value="1"
+             {{if eq (index .Settings "github.create_pr") "1"}}checked{{end}}>
+      <span>Try to open a PR after pushing</span>
+    </label>
+    <p class="field-hint">Best-effort. A failure is recorded and ignored, never treated as a broken run.</p>
+
+    <button type="submit" class="btn btn-primary">Save git</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Pricing</h2>
+  <p class="card-note">Used to compute cost per call. Editable so the maths can be corrected without a redeploy.</p>
+  <form method="post" action="/settings/pricing" class="form">
+    <div class="field-row">
+      <label class="field">
+        <span class="field-label">Input /Mtok</span>
+        <input type="text" inputmode="decimal" name="pricing.input_per_mtok"
+               value="{{index .Settings "pricing.input_per_mtok"}}">
+      </label>
+      <label class="field">
+        <span class="field-label">Cached /Mtok</span>
+        <input type="text" inputmode="decimal" name="pricing.cached_input_per_mtok"
+               value="{{index .Settings "pricing.cached_input_per_mtok"}}">
+      </label>
+      <label class="field">
+        <span class="field-label">Output /Mtok</span>
+        <input type="text" inputmode="decimal" name="pricing.output_per_mtok"
+               value="{{index .Settings "pricing.output_per_mtok"}}">
+      </label>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save pricing</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Credentials</h2>
+  <p class="card-note">
+    Stored encrypted. Leaving a field blank keeps the existing value; use Remove to clear one.
+  </p>
+
+  <form method="post" action="/settings/secrets" class="form">
+    {{range .Secrets}}
+    <label class="field">
+      <span class="field-label">
+        {{.Label}}
+        {{if .Set}}<span class="tag tag-ok">set</span>{{else}}<span class="tag">not set</span>{{end}}
+      </span>
+      <input type="password" name="{{.Name}}" placeholder="{{if .Set}}unchanged{{else}}not set{{end}}"
+             autocomplete="off" spellcheck="false">
+      {{if .Set}}
+      <button type="submit" class="link-btn" name="remove" value="{{.Name}}"
+              data-confirm="Remove {{.Label}}?">Remove</button>
+      {{end}}
+    </label>
+    {{end}}
+
+    <button type="submit" class="btn btn-primary">Save credentials</button>
+  </form>
+</section>
+{{end}}

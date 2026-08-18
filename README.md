@@ -5,7 +5,8 @@ A personal coding agent. Single user, internal use, driven from a phone.
 Give it a repo and a goal, it plans, builds, reviews its own work, verifies the
 result by actually driving the UI, and pushes to a branch for me to merge.
 
-**Status: design locked, not yet implemented.**
+**Status:** foundations built — database, migrations, auth, and the UI shell.
+The agent loop, Daytona sandbox, and LLM calls are not wired up yet.
 
 ## Docs
 
@@ -31,3 +32,52 @@ result by actually driving the UI, and pushes to a branch for me to merge.
 - One branch, always named `doot`
 - Max 5 screens
 - Nothing important stored on the machine that runs it
+
+## Running
+
+Three environment variables, and that's the lot. Everything else is configured
+from the Settings screen.
+
+```sh
+export DOOT_MASTER_KEY=$(go run ./cmd/doot genkey)
+export TURSO_DATABASE_URL='libsql://your-db.turso.io'
+export TURSO_AUTH_TOKEN='...'
+
+go run ./cmd/doot serve      # http://localhost:8080
+```
+
+For a local run without a Turso account, point the URL at a file instead. The
+driver is chosen by URL scheme, so there is no way to mix the two up:
+
+```sh
+TURSO_DATABASE_URL=./local.db DOOT_MASTER_KEY=$(go run ./cmd/doot genkey) \
+  DOOT_DEV=1 go run ./cmd/doot serve
+```
+
+First boot creates the login `doot` / `doot` and nags until you change it.
+
+| Command | |
+|---|---|
+| `doot serve` | Start the server (migrations run automatically) |
+| `doot migrate` | Apply migrations and exit |
+| `doot genkey` | Print a new `DOOT_MASTER_KEY` |
+
+| Env var | |
+|---|---|
+| `TURSO_DATABASE_URL` | Required. Turso URL, or a local file path |
+| `TURSO_AUTH_TOKEN` | Required for Turso |
+| `DOOT_MASTER_KEY` | Required. Encrypts stored credentials |
+| `PORT` | Default `8080` |
+| `DOOT_DEV` | Text logs, live template reload, non-Secure cookie |
+| `DOOT_LOG_LEVEL` | `debug` \| `info` \| `warn` \| `error` |
+| `DOOT_RESET_ADMIN` | Break-glass: resets login to `doot`/`doot` on boot |
+
+Credentials can be seeded on first boot with `DOOT_LLM_API_KEY`,
+`DOOT_DAYTONA_API_KEY`, `DOOT_GITHUB_PAT`, `DOOT_R2_ACCESS_KEY_ID` and
+`DOOT_R2_SECRET_ACCESS_KEY`. After that the encrypted database copy wins, so a
+stale env var can't undo a rotation done from your phone.
+
+Deploy: `fly secrets set` those three, then `fly deploy`. Migrations run on
+startup, so deploying is the only step.
+
+Icons are generated, not committed by hand: `go run ./tools/genicons`.
