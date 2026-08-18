@@ -3,10 +3,10 @@ package web
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"log/slog"
 	"net/http"
 
+	"github.com/sumit-waani/doot/internal/agent"
 	"github.com/sumit-waani/doot/internal/auth"
 	"github.com/sumit-waani/doot/internal/config"
 	"github.com/sumit-waani/doot/internal/project"
@@ -46,15 +46,31 @@ func (s *Server) base(ctx context.Context, r *http.Request, user auth.User, nav,
 type chatPage struct {
 	basePage
 	Project   project.Project
-	RunStatus string
+	Status    agent.Status
 	Messages  []messageView
 	LastEvent int64
+
+	// Active reports whether a run is doing work, which decides whether the
+	// composer shows Send or Pause.
+	Active bool
+	// Waiting reports that the run is parked on the human, so the next message is
+	// an answer rather than a new instruction.
+	Waiting bool
 }
 
 type messageView struct {
-	Role    string
-	Content string
-	At      string
+	Role      string
+	Content   string
+	At        string
+	IsSummary bool
+	Tools     []toolCallView
+}
+
+type toolCallView struct {
+	Name     string
+	Status   string
+	Preview  string
+	Duration int
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -77,25 +93,37 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request, user auth.Us
 		slog.Error("could not load messages", "err", err)
 	}
 
+	status, err := s.agent.Status(ctx)
+	if err != nil {
+		slog.Error("could not load agent status", "err", err)
+	}
+
 	page := chatPage{
 		basePage:  s.base(ctx, r, user, "chat", "Chat"),
 		Project:   p,
-		RunStatus: s.currentRunStatus(ctx),
+		Status:    status,
 		Messages:  messages,
 		LastEvent: lastEvent,
+		Active:    status.RunStatus == agent.StatusRunning,
+		Waiting: status.RunStatus == agent.StatusAwaitingHuman ||
+			status.RunStatus == agent.StatusAwaitingApproval,
 	}
 	s.render.render(w, http.StatusOK, "chat", page)
 }
 
 // loadMessages returns the live conversation: the current epoch only. Earlier
 // epochs are retained in the database but are not part of live context.
+//
+// Tool results are not rendered as messages. They are attached to the assistant
+// turn that requested them, collapsed, so the timeline stays scannable on a
+// phone instead of being buried in build output.
 func (s *Server) loadMessages(ctx context.Context, epoch int) ([]messageView, error) {
 	if epoch == 0 {
 		return nil, nil
 	}
 
 	const q = `
-SELECT role, COALESCE(content,''), created_at
+SELECT id, role, COALESCE(content,''), created_at, is_summary
   FROM messages
  WHERE epoch = ?
    AND role IN ('user','assistant')
@@ -107,31 +135,76 @@ SELECT role, COALESCE(content,''), created_at
 	}
 	defer rows.Close()
 
-	var out []messageView
+	var (
+		out []messageView
+		ids []int64
+	)
+	byID := map[int64]int{}
+
 	for rows.Next() {
-		var m messageView
-		if err := rows.Scan(&m.Role, &m.Content, &m.At); err != nil {
+		var (
+			id        int64
+			m         messageView
+			isSummary int
+		)
+		if err := rows.Scan(&id, &m.Role, &m.Content, &m.At, &isSummary); err != nil {
 			return nil, err
 		}
+		m.IsSummary = isSummary == 1
+		byID[id] = len(out)
+		ids = append(ids, id)
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(ids) == 0 {
+		return out, nil
+	}
+
+	tools, err := s.loadToolCalls(ctx, epoch)
+	if err != nil {
+		return out, err
+	}
+	for messageID, calls := range tools {
+		if idx, ok := byID[messageID]; ok {
+			out[idx].Tools = calls
+		}
+	}
+
+	return out, nil
 }
 
-// currentRunStatus reports the active run's status, or "idle".
-func (s *Server) currentRunStatus(ctx context.Context) string {
-	var status string
-	const q = `SELECT status FROM runs WHERE active = 1 LIMIT 1`
+// loadToolCalls groups tool calls by the assistant message that requested them.
+func (s *Server) loadToolCalls(ctx context.Context, epoch int) (map[int64][]toolCallView, error) {
+	const q = `
+SELECT tc.message_id, tc.name, tc.status, COALESCE(tc.result_preview,''), COALESCE(tc.duration_ms,0)
+  FROM tool_calls tc
+  JOIN messages m ON m.id = tc.message_id
+ WHERE m.epoch = ?
+ ORDER BY tc.id`
 
-	err := s.db.QueryRowContext(ctx, q).Scan(&status)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "idle"
-	}
+	rows, err := s.db.QueryContext(ctx, q, epoch)
 	if err != nil {
-		slog.Error("could not read run status", "err", err)
-		return "unknown"
+		return nil, err
 	}
-	return status
+	defer rows.Close()
+
+	out := map[int64][]toolCallView{}
+	for rows.Next() {
+		var (
+			messageID sql.NullInt64
+			v         toolCallView
+		)
+		if err := rows.Scan(&messageID, &v.Name, &v.Status, &v.Preview, &v.Duration); err != nil {
+			return nil, err
+		}
+		if messageID.Valid {
+			out[messageID.Int64] = append(out[messageID.Int64], v)
+		}
+	}
+	return out, rows.Err()
 }
 
 // ---------------------------------------------------------------- desktop

@@ -506,3 +506,123 @@ input:focus, textarea:focus, select:focus {
 .pill-stopped,
 .pill-archived { background: var(--bg-input); border-color: var(--border-strong); color: var(--text-dim); }
 .pill-deleting { background: #3a1d1d; border-color: #6b3129; color: var(--danger); }
+
+
+/* ------------------------------------------------------------------ agent loop */
+
+/* Tool calls hang off the assistant turn that requested them, collapsed to one
+   line each. A build log rendered in full would bury the conversation. */
+.tool-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.tool-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border-left: 2px solid var(--border-strong);
+  font-size: 0.75rem;
+}
+.tool-name { font-family: var(--mono); color: var(--text-dim); flex-shrink: 0; }
+.tool-preview {
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.tool-dur { margin-left: auto; color: var(--text-faint); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.tool-running { border-left-color: var(--accent); }
+.tool-ok { border-left-color: var(--accent-dim); }
+.tool-error { border-left-color: var(--danger); }
+.tool-error .tool-preview { color: var(--danger); }
+
+/* Context boundaries are shown, not hidden: knowing the agent's memory rolled
+   over explains behaviour that would otherwise look like forgetfulness. */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  color: var(--text-faint);
+  font-size: 0.6875rem;
+  text-transform: lowercase;
+}
+.divider::before, .divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.summary-card {
+  background: var(--bg-raised);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 10px 13px;
+  font-size: 0.8125rem;
+}
+.summary-card summary { color: var(--text-dim); cursor: pointer; }
+.summary-body { margin-top: 8px; white-space: pre-wrap; color: var(--text-dim); }
+
+/* Plan approval renders inline in the timeline. Approving should never mean
+   leaving the conversation. */
+.plan-card, .plan-progress {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--pad);
+}
+.plan-card { border-color: #33507f; }
+.plan-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.plan-head strong { font-size: 0.9375rem; }
+.plan-goal { color: var(--text-dim); font-size: 0.875rem; }
+.plan-deliverables { margin: 0 0 10px; padding-left: 18px; color: var(--text-dim); font-size: 0.8125rem; }
+.plan-tasks { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.plan-task-title { font-size: 0.875rem; }
+.plan-task-detail { display: block; color: var(--text-faint); font-size: 0.75rem; }
+.plan-actions { display: flex; gap: 10px; margin-top: 14px; }
+
+.plan-tasks-live { list-style: none; padding-left: 0; }
+.plan-tasks-live li { display: flex; align-items: center; gap: 8px; }
+.task-marker {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  flex-shrink: 0;
+}
+.task-done .task-marker { background: var(--accent); border-color: var(--accent); }
+.task-in_progress .task-marker { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(77,212,172,0.18); }
+.task-failed .task-marker { background: var(--danger); border-color: var(--danger); }
+.task-skipped .task-marker { border-style: dashed; }
+.task-done .plan-task-title { color: var(--text-faint); }
+
+.waiting-note {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 64px);
+  z-index: 29;
+  margin: 0;
+  padding: 8px var(--pad);
+  background: #1c2740;
+  color: #a8c5f0;
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+/* Pause is its own form so it can post to its own endpoint, but it has to sit
+   exactly where Send was: one thumb, same place, no hunting. */
+.pause-dock {
+  position: fixed;
+  right: var(--pad);
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 10px);
+  z-index: 31;
+  margin: 0;
+}
+
+.screenshot-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; }
+.screenshot-strip img {
+  height: 96px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+}
