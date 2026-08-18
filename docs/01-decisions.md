@@ -252,8 +252,20 @@ These stay open until implementation, on purpose:
   `sandbox.vnc_port`, because Daytona documents the desktop stack but not the
   port it serves on. Needs confirming against a live sandbox.
 
+- **R2 artifact upload.** Computer-use screenshots are currently held in a
+  bounded in-memory store and served to the UI from there, so they are lost on
+  restart. R2 remains the right destination — a failed verification is worth
+  examining days later — but writing `artifacts` rows pointing at objects that do
+  not exist would be worse than holding them honestly in memory. The seam is in
+  place; the upload is not.
+
 ### Resolved during implementation
 
 - **Go SDK gaps.** Both were real, and neither needed hand-written HTTP: the
   generated Toolbox and control-plane clients cover them. See
   [04-sandbox-and-git.md](./04-sandbox-and-git.md#go-sdk-gaps--verified-and-better-than-feared).
+- **Compaction and the run's epoch.** Compaction rolls the epoch mid-run, so the
+  loop reads the *project's* current epoch each turn rather than the epoch the
+  run started on. Reading the run's own value made the turn after a compaction
+  reload the pre-compaction transcript, which cost a summarisation call and
+  changed nothing.

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sumit-waani/doot/internal/agent"
 	"github.com/sumit-waani/doot/internal/auth"
 	"github.com/sumit-waani/doot/internal/bootstrap"
 	"github.com/sumit-waani/doot/internal/config"
@@ -27,6 +28,7 @@ type Options struct {
 	Auth             *auth.Service
 	Events           *events.Log
 	Project          *project.Service
+	Agent            *agent.Service
 	Dev              bool
 	UsingDefaultPass bool
 }
@@ -38,6 +40,7 @@ type Server struct {
 	auth    *auth.Service
 	events  *events.Log
 	project *project.Service
+	agent   *agent.Service
 	render  *renderer
 	limit   *auth.LoginLimiter
 	dev     bool
@@ -58,6 +61,7 @@ func NewServer(opts Options) (*Server, error) {
 		auth:             opts.Auth,
 		events:           opts.Events,
 		project:          opts.Project,
+		agent:            opts.Agent,
 		render:           r,
 		limit:            auth.NewLoginLimiter(10, 15*time.Minute),
 		dev:              opts.Dev,
@@ -100,6 +104,18 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sandbox/stop", s.requireAuth(s.handleSandboxStop))
 	mux.Handle("POST /desktop/start", s.requireAuth(s.handleDesktopStart))
 	mux.Handle("POST /desktop/stop", s.requireAuth(s.handleDesktopStop))
+
+	// Chat and the agent loop. These return immediately; the run continues in the
+	// background and reports over SSE.
+	mux.Handle("POST /chat/send", s.requireAuth(s.handleChatSend))
+	mux.Handle("POST /chat/plan", s.requireAuth(s.handleChatPlan))
+	mux.Handle("POST /chat/approve", s.requireAuth(s.handleChatApprove))
+	mux.Handle("POST /chat/reject", s.requireAuth(s.handleChatReject))
+	mux.Handle("POST /chat/pause", s.requireAuth(s.handleChatPause))
+	mux.Handle("POST /chat/resume", s.requireAuth(s.handleChatResume))
+	mux.Handle("POST /chat/cancel", s.requireAuth(s.handleChatCancel))
+	mux.Handle("POST /chat/clear", s.requireAuth(s.handleChatClear))
+	mux.Handle("GET /artifacts/{id}", s.requireAuth(s.handleArtifact))
 
 	// Settings. Saved per section so a partially-applied section is impossible.
 	mux.Handle("POST /settings/account", s.requireAuth(s.handleSettingsAccount))

@@ -194,3 +194,84 @@ func decodeImage(encoded string) ([]byte, error) {
 	}
 	return data, nil
 }
+
+// ---------------------------------------------------------------- input
+
+// The E2E verifier drives the desktop through these. Each one assumes the
+// computer-use processes are already up; call EnsureDesktop first.
+
+// Click clicks the left mouse button at the given coordinates.
+//
+// Coordinates are in the framebuffer's own pixel space, which is why callers
+// should read geometry from Display rather than the configured resolution.
+func (s *Sandbox) Click(ctx context.Context, x, y int) error {
+	if _, err := s.sb.ComputerUse.Mouse().Click(ctx, x, y, nil, nil); err != nil {
+		return fmt.Errorf("daytona: click at %d,%d: %w", x, y, err)
+	}
+	return nil
+}
+
+// DoubleClick double-clicks at the given coordinates.
+func (s *Sandbox) DoubleClick(ctx context.Context, x, y int) error {
+	double := true
+	if _, err := s.sb.ComputerUse.Mouse().Click(ctx, x, y, nil, &double); err != nil {
+		return fmt.Errorf("daytona: double click at %d,%d: %w", x, y, err)
+	}
+	return nil
+}
+
+// MoveMouse moves the cursor without clicking.
+func (s *Sandbox) MoveMouse(ctx context.Context, x, y int) error {
+	if _, err := s.sb.ComputerUse.Mouse().Move(ctx, x, y); err != nil {
+		return fmt.Errorf("daytona: move mouse to %d,%d: %w", x, y, err)
+	}
+	return nil
+}
+
+// Scroll scrolls at the given coordinates. direction is "up" or "down".
+func (s *Sandbox) Scroll(ctx context.Context, x, y int, direction string, amount int) error {
+	if amount <= 0 {
+		amount = 1
+	}
+	if direction != "up" && direction != "down" {
+		return fmt.Errorf("daytona: scroll direction must be up or down, got %q", direction)
+	}
+	if _, err := s.sb.ComputerUse.Mouse().Scroll(ctx, x, y, direction, &amount); err != nil {
+		return fmt.Errorf("daytona: scroll %s at %d,%d: %w", direction, x, y, err)
+	}
+	return nil
+}
+
+// TypeText types literal text. Newlines become Enter presses.
+func (s *Sandbox) TypeText(ctx context.Context, text string) error {
+	if text == "" {
+		return nil
+	}
+	if err := s.sb.ComputerUse.Keyboard().Type(ctx, text, nil); err != nil {
+		return fmt.Errorf("daytona: type text: %w", err)
+	}
+	return nil
+}
+
+// PressKey presses a named key, optionally with modifiers.
+//
+// Accepts either a bare key ("enter") or a hotkey combination ("ctrl+c"), since
+// a model will produce both and rejecting one form is a pointless failure.
+func (s *Sandbox) PressKey(ctx context.Context, key string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("daytona: key is required")
+	}
+
+	if strings.Contains(key, "+") {
+		if err := s.sb.ComputerUse.Keyboard().Hotkey(ctx, strings.ToLower(key)); err != nil {
+			return fmt.Errorf("daytona: hotkey %q: %w", key, err)
+		}
+		return nil
+	}
+
+	if err := s.sb.ComputerUse.Keyboard().Press(ctx, strings.ToLower(key), nil); err != nil {
+		return fmt.Errorf("daytona: press %q: %w", key, err)
+	}
+	return nil
+}

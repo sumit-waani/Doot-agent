@@ -5,8 +5,9 @@ A personal coding agent. Single user, internal use, driven from a phone.
 Give it a repo and a goal, it plans, builds, reviews its own work, verifies the
 result by actually driving the UI, and pushes to a branch for me to merge.
 
-**Status:** foundations built — database, migrations, auth, and the UI shell.
-The agent loop, Daytona sandbox, and LLM calls are not wired up yet.
+**Status:** end to end in place — database, auth, UI, Daytona sandbox, LLM client
+and the agent loop. Not yet run against a real project; R2 artifact upload is the
+one deliberate gap.
 
 ## Docs
 
@@ -81,3 +82,18 @@ Deploy: `fly secrets set` those three, then `fly deploy`. Migrations run on
 startup, so deploying is the only step.
 
 Icons are generated, not committed by hand: `go run ./tools/genicons`.
+
+## Exercising the agent loop without spending money
+
+`tools/stubllm` is a scripted OpenAI-compatible server. It streams responses from
+a JSON scenario in the same SSE shape the real API uses, so the loop's control
+flow — tool calls, plan approval, pausing, compaction — can be driven over real
+HTTP.
+
+```sh
+python3 tools/stubllm/stub.py 8188 scenario.json
+```
+
+Then point the model at it in Settings: base URL `http://127.0.0.1:8188/v1`, any
+API key. `GET /__calls` on the stub returns what the agent actually sent, which
+is how the prompt, the tool schemas and the usage request get verified.

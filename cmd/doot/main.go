@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sumit-waani/doot/internal/agent"
 	"github.com/sumit-waani/doot/internal/auth"
 	"github.com/sumit-waani/doot/internal/bootstrap"
 	"github.com/sumit-waani/doot/internal/config"
@@ -110,6 +111,10 @@ func serve(env config.Env) error {
 	eventLog := events.NewLog(database)
 
 	projects := project.NewService(database, cfg, eventLog)
+	agents := agent.NewService(database, cfg, eventLog, projects)
+	// Unwinds any in-flight run so a deploy does not leave the loop mid-turn with
+	// no process behind it.
+	defer agents.Close()
 	// Closing releases the Daytona client, including the state-event WebSocket
 	// the SDK keeps open, and stops any sandbox heartbeat.
 	defer func() {
@@ -126,6 +131,7 @@ func serve(env config.Env) error {
 		Auth:             auth.NewService(database, !env.Dev),
 		Events:           eventLog,
 		Project:          projects,
+		Agent:            agents,
 		Dev:              env.Dev,
 		UsingDefaultPass: boot.UsingDefaultPass,
 	})

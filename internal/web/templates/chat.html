@@ -2,14 +2,17 @@
 <header class="chat-header" data-last-event="{{.LastEvent}}">
   <div class="chat-header-row">
     <h1 class="chat-title">{{if .Project.Exists}}{{.Project.Name}}{{else}}No project{{end}}</h1>
-    <span class="pill pill-{{.RunStatus}}" id="run-status">{{.RunStatus}}</span>
+    <span class="pill pill-{{.Status.RunStatus}}" id="run-status">{{.Status.RunStatus}}</span>
   </div>
   <div class="chat-header-meta">
-    <span id="usage-cost" class="meta-item" title="Session cost">$0.00</span>
+    <span id="usage-cost" class="meta-item" title="Spend this conversation">${{printf "%.2f" .Status.SessionUSD}}</span>
     <span id="usage-context" class="meta-item" title="Context used">0%</span>
     <a id="preview-chip" class="meta-chip" href="#" hidden target="_blank" rel="noopener">Preview</a>
   </div>
 </header>
+
+{{if .Flash}}<p class="alert alert-ok" role="status">{{.Flash}}</p>{{end}}
+{{if .Error}}<p class="alert alert-error" role="alert">{{.Error}}</p>{{end}}
 
 {{if not .Project.Exists}}
 <div class="empty">
@@ -30,25 +33,106 @@
   {{end}}
 
   {{range .Messages}}
-  <article class="msg msg-{{.Role}}">
-    <div class="msg-body">{{.Content}}</div>
-    <time class="msg-time">{{.At}}</time>
-  </article>
+    {{if .IsSummary}}
+    <div class="divider">
+      <span>context compacted</span>
+    </div>
+    <details class="summary-card">
+      <summary>Carried-forward context</summary>
+      <div class="summary-body">{{.Content}}</div>
+    </details>
+    {{else}}
+    <article class="msg msg-{{.Role}}">
+      <div class="msg-body">{{.Content}}</div>
+      {{if .Tools}}
+      <div class="tool-list">
+        {{range .Tools}}
+        <div class="tool-row tool-{{.Status}}">
+          <span class="tool-name">{{.Name}}</span>
+          {{if .Preview}}<span class="tool-preview">{{.Preview}}</span>{{end}}
+          {{if .Duration}}<span class="tool-dur">{{.Duration}}ms</span>{{end}}
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+      <time class="msg-time">{{.At}}</time>
+    </article>
+    {{end}}
+  {{end}}
+
+  {{with .Status.Plan}}
+  {{if eq .Status "awaiting_approval"}}
+  <section class="plan-card" id="plan-card">
+    <header class="plan-head">
+      <strong>{{.Title}}</strong>
+      <span class="tag">awaiting approval</span>
+    </header>
+    <p class="plan-goal">{{.Goal}}</p>
+
+    {{if .Deliverables}}
+    <ul class="plan-deliverables">
+      {{range .Deliverables}}<li>{{.}}</li>{{end}}
+    </ul>
+    {{end}}
+
+    <ol class="plan-tasks">
+      {{range .Tasks}}
+      <li>
+        <span class="plan-task-title">{{.Title}}</span>
+        {{if .Detail}}<span class="plan-task-detail">{{.Detail}}</span>{{end}}
+      </li>
+      {{end}}
+    </ol>
+
+    <div class="plan-actions">
+      <form method="post" action="/chat/approve" class="inline-form">
+        <input type="hidden" name="plan_id" value="{{.ID}}">
+        <button type="submit" class="btn btn-primary">Approve</button>
+      </form>
+      <form method="post" action="/chat/reject" class="inline-form">
+        <input type="hidden" name="plan_id" value="{{.ID}}">
+        <button type="submit" class="btn">Reject</button>
+      </form>
+    </div>
+  </section>
+  {{else}}
+  <section class="plan-progress" id="plan-progress">
+    <header class="plan-head">
+      <strong>{{.Title}}</strong>
+      <span class="tag">{{.Status}}</span>
+    </header>
+    <ol class="plan-tasks plan-tasks-live">
+      {{range .Tasks}}
+      <li class="task-{{.Status}}">
+        <span class="task-marker" aria-hidden="true"></span>
+        <span class="plan-task-title">{{.Title}}</span>
+        {{if .ReviewVerdict}}<span class="tag">{{.ReviewVerdict}}</span>{{end}}
+      </li>
+      {{end}}
+    </ol>
+  </section>
+  {{end}}
   {{end}}
 </div>
+
+{{if .Waiting}}
+<p class="waiting-note">
+  {{if eq .Status.RunStatus "awaiting_human"}}
+  Doot asked you something and is waiting. Your next message is the answer.
+  {{else}}
+  Waiting for you to approve or reject the plan above.
+  {{end}}
+</p>
+{{end}}
 
 <form class="composer" id="composer" method="post" action="/chat/send">
   <div class="composer-row">
     <textarea name="message" id="composer-input" rows="1"
-              placeholder="Message Doot…" autocomplete="off"
-              autocapitalize="sentences"></textarea>
+              placeholder="{{if .Waiting}}Your answer…{{else}}Message Doot…{{end}}"
+              autocomplete="off" autocapitalize="sentences"></textarea>
 
-    <button type="submit" class="btn btn-send" id="send-btn" aria-label="Send">
+    <button type="submit" class="btn btn-send" id="send-btn" aria-label="Send" {{if .Active}}hidden{{end}}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l16-8-6 8 6 8-16-8Z"/></svg>
-    </button>
-
-    <button type="button" class="btn btn-pause" id="pause-btn" aria-label="Pause" hidden>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="6" width="3.5" height="12" rx="1"/><rect x="13.5" y="6" width="3.5" height="12" rx="1"/></svg>
     </button>
 
     <details class="composer-menu">
@@ -56,11 +140,33 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
       </summary>
       <div class="menu-sheet">
-        <button type="button" class="menu-item" id="plan-btn">Create goal plan</button>
-        <button type="button" class="menu-item menu-item-danger" id="clear-btn">Clear conversation</button>
+        <button type="submit" form="plan-form" class="menu-item">Create goal plan</button>
+        {{if .Status.Resumable}}
+        <button type="submit" form="resume-form" class="menu-item">Resume run</button>
+        {{end}}
+        {{if or .Active .Status.Resumable}}
+        <button type="submit" form="cancel-form" class="menu-item menu-item-danger">Cancel run</button>
+        {{end}}
+        <button type="submit" form="clear-form" class="menu-item menu-item-danger"
+                data-confirm="Clear the conversation? History is kept and the sandbox is untouched.">
+          Clear conversation
+        </button>
       </div>
     </details>
   </div>
 </form>
+
+<!-- Pause sits outside the composer form so it posts to its own endpoint while
+     staying reachable with one thumb. -->
+<form method="post" action="/chat/pause" id="pause-form" class="pause-dock" {{if not .Active}}hidden{{end}}>
+  <button type="submit" class="btn btn-pause" id="pause-btn" aria-label="Pause">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="6" width="3.5" height="12" rx="1"/><rect x="13.5" y="6" width="3.5" height="12" rx="1"/></svg>
+  </button>
+</form>
+
+<form method="post" action="/chat/plan" id="plan-form" hidden></form>
+<form method="post" action="/chat/resume" id="resume-form" hidden></form>
+<form method="post" action="/chat/cancel" id="cancel-form" hidden></form>
+<form method="post" action="/chat/clear" id="clear-form" hidden></form>
 {{end}}
 {{end}}
