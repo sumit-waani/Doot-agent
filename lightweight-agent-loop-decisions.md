@@ -4,15 +4,8 @@
 
 ## Why This Exists
 
-`kaptaan` (existing 13-month-old agent) is battle-tested but heavy — built for
-accuracy-first systems work (C, Rust, Erlang, OCaml, Perl, DSLs, storage
-engines, web servers). Its cost profile is *intentional* and justified for
-that class of work.
-
-Problem: basic/light tasks were also being routed through kaptaan, which is
-not cost-justified for them. Rather than touch a 13-month-old,
-heavily-patched, framework-less FastAPI loop that's still working — **build a
-new, separate, minimal loop for light work.** Kaptaan stays untouched.
+ **build a
+new, separate, minimal agent loop for light work.**
 
 ## Non-Goals
 - No multi-agent orchestrator complexity for the new loop (see Agent
