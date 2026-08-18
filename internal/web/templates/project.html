@@ -1,12 +1,19 @@
 {{define "content"}}
 <header class="screen-header">
   <h1>Project</h1>
+  {{if .Busy}}<span class="pill pill-running">{{.Busy}}…</span>{{end}}
 </header>
+
+{{if .Flash}}<p class="alert alert-ok" role="status">{{.Flash}}</p>{{end}}
+{{if .Error}}<p class="alert alert-error" role="alert">{{.Error}}</p>{{end}}
 
 {{if not .Project.Exists}}
 <section class="card">
   <h2 class="card-title">Create project</h2>
-  <p class="card-note">One project at a time. To switch later, delete this one and create another.</p>
+  <p class="card-note">
+    One project at a time. To switch later, delete this one and create another —
+    conversation history is kept either way.
+  </p>
 
   <form method="post" action="/project/create" class="form">
     <label class="field">
@@ -18,6 +25,7 @@
       <span class="field-label">Repository URL</span>
       <input type="url" name="repo_url" placeholder="https://github.com/owner/repo"
              required autocapitalize="none" autocorrect="off" spellcheck="false">
+      <span class="field-hint">Must be HTTPS. The sandbox has no SSH keys.</span>
     </label>
 
     <button type="submit" class="btn btn-primary btn-block">Create and provision sandbox</button>
@@ -26,13 +34,28 @@
 
 {{else}}
 
+{{if .Project.LastError}}
+<section class="card card-danger">
+  <h2 class="card-title">Sandbox error</h2>
+  <p class="card-note mono-block">{{.Project.LastError}}</p>
+  <form method="post" action="/project/reset">
+    <button type="submit" class="btn btn-danger"
+            data-confirm="Rebuild the sandbox from the repository? Uncommitted work will be lost.">
+      Rebuild sandbox
+    </button>
+  </form>
+</section>
+{{end}}
+
 <section class="card">
   <h2 class="card-title">Repository</h2>
   <dl class="kv">
     <dt>Name</dt><dd>{{.Project.Name}}</dd>
-    <dt>Repo</dt><dd><a href="{{.Project.RepoURL}}" target="_blank" rel="noopener">{{.Project.RepoOwner}}/{{.Project.RepoName}}</a></dd>
+    <dt>Repo</dt>
+    <dd><a href="{{.Project.RepoURL}}" target="_blank" rel="noopener">{{.Project.RepoOwner}}/{{.Project.RepoName}}</a></dd>
     <dt>Base branch</dt><dd><code>{{.Project.BaseBranch}}</code></dd>
     <dt>Work branch</dt><dd><code>{{.Project.WorkBranch}}</code></dd>
+    <dt>Clone path</dt><dd><code>{{.Project.WorkDir}}</code></dd>
   </dl>
 </section>
 
@@ -40,25 +63,46 @@
   <h2 class="card-title">Sandbox</h2>
   <dl class="kv">
     <dt>ID</dt><dd><code>{{if .Project.SandboxID}}{{.Project.SandboxID}}{{else}}—{{end}}</code></dd>
-    <dt>State</dt><dd>{{if .Project.SandboxState}}{{.Project.SandboxState}}{{else}}—{{end}}</dd>
-    <dt>Snapshot</dt><dd><code>{{.Project.SandboxSnap}}</code></dd>
-    <dt>Resolution</dt><dd><code>{{.Project.VNCResolution}}</code></dd>
+    <dt>State</dt>
+    <dd><span class="pill pill-{{.Project.SandboxState}}" id="sandbox-state">{{if .Project.SandboxState}}{{.Project.SandboxState}}{{else}}—{{end}}</span></dd>
+    <dt>Snapshot</dt><dd><code>{{.Project.SandboxSnapshot}}</code></dd>
+    <dt>Desktop</dt><dd>{{if .Project.DesktopStatus}}{{.Project.DesktopStatus}}{{else}}not running{{end}}</dd>
+    <dt>Resolution</dt>
+    <dd>
+      <code>{{.Project.VNCResolution}}</code>
+      {{if .Project.VNCWidth}}<span class="tag tag-ok">live {{.Project.VNCWidth}}x{{.Project.VNCHeight}}</span>{{end}}
+    </dd>
+    <dt>Heartbeat</dt><dd>{{if .Heartbeat}}<span class="tag tag-ok">active</span>{{else}}idle{{end}}</dd>
   </dl>
-  <p class="card-note">Resolution is fixed when the sandbox is created and cannot be changed afterwards.</p>
+
+  <p class="card-note">
+    Resolution is fixed when the sandbox is created and cannot be changed afterwards.
+    Auto-stop reclaims the sandbox when idle; a heartbeat keeps it awake during a run.
+  </p>
 
   <div class="btn-row">
-    <button type="button" class="btn" id="sandbox-start">Start</button>
-    <button type="button" class="btn" id="sandbox-stop">Stop</button>
+    <form method="post" action="/sandbox/start" class="inline-form">
+      <button type="submit" class="btn" {{if .Busy}}disabled{{end}}>Start</button>
+    </form>
+    <form method="post" action="/sandbox/stop" class="inline-form">
+      <button type="submit" class="btn" {{if .Busy}}disabled{{end}}>Stop</button>
+    </form>
+    <a href="/desktop" class="btn">Desktop</a>
   </div>
 </section>
 
 <section class="card">
   <h2 class="card-title">Build &amp; run</h2>
+  <p class="card-note">
+    Dependencies install at runtime: the sandbox must use a default Daytona image
+    for computer-use to work, so they cannot be baked into a custom image.
+  </p>
+
   <form method="post" action="/project/update" class="form">
     <label class="field">
       <span class="field-label">Setup script</span>
       <textarea name="setup_script" rows="4" spellcheck="false"
-                placeholder="Installs dependencies inside the sandbox">{{.Project.SetupScript}}</textarea>
+                placeholder="npm install">{{.Project.SetupScript}}</textarea>
     </label>
 
     <div class="field-row">
@@ -72,8 +116,16 @@
       </label>
     </div>
 
-    <button type="submit" class="btn btn-primary">Save</button>
+    <div class="btn-row">
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
   </form>
+
+  {{if .Project.SetupScript}}
+  <form method="post" action="/project/setup" class="inline-form">
+    <button type="submit" class="btn" {{if .Busy}}disabled{{end}}>Run setup script now</button>
+  </form>
+  {{end}}
 </section>
 
 <section class="card">
@@ -117,7 +169,10 @@
       <strong>Reset sandbox</strong>
       <p>Destroys the sandbox and rebuilds it from the repo. Uncommitted work is lost. Does not touch the conversation.</p>
     </div>
-    <button type="button" class="btn btn-danger" data-confirm="Reset the sandbox? Uncommitted work will be lost.">Reset</button>
+    <form method="post" action="/project/reset">
+      <button type="submit" class="btn btn-danger" {{if .Busy}}disabled{{end}}
+              data-confirm="Reset the sandbox? Uncommitted work will be lost.">Reset</button>
+    </form>
   </div>
 
   <div class="danger-item">
@@ -125,7 +180,10 @@
       <strong>Delete project</strong>
       <p>Destroys the sandbox and clears the project. Conversation history and audit logs are kept.</p>
     </div>
-    <button type="button" class="btn btn-danger" data-confirm="Delete this project? The sandbox will be destroyed.">Delete</button>
+    <form method="post" action="/project/delete">
+      <button type="submit" class="btn btn-danger" {{if .Busy}}disabled{{end}}
+              data-confirm="Delete this project? The sandbox will be destroyed.">Delete</button>
+    </form>
   </div>
 </section>
 {{end}}

@@ -97,10 +97,14 @@ processes, or work happening inside the sandbox.
 A long build, a test suite, or an agent thinking for 20 minutes therefore counts
 as *idle*, and the sandbox can be stopped mid-run.
 
-**Locked mitigation:** while a run is active, the loop calls
-`sandbox.refresh_activity()` on a **5-minute heartbeat**, written alongside
-`runs.heartbeat_at`. Auto-stop stays at 30 minutes so an idle sandbox still
-shuts down.
+**Locked mitigation:** while a run is active, Doot signals activity on a
+**5-minute heartbeat** (`sandbox.heartbeat_seconds`). Auto-stop stays at 30
+minutes so a genuinely idle sandbox still shuts down — an always-on sandbox is
+needless cost for a tool used opportunistically from a phone.
+
+The Go SDK has no activity-refresh method, so this goes through the control-plane
+endpoint directly, with a Toolbox read as fallback. See
+[Go SDK gaps](#go-sdk-gaps--verified-and-better-than-feared).
 
 The alternative — `auto_stop_interval = 0` for an always-on sandbox — was
 rejected as needlessly expensive for a tool used opportunistically from a phone.
@@ -173,23 +177,43 @@ the recording is by far the fastest way to see why. Recordings default to
 `DAYTONA_RECORDINGS_DIR` — but they live on the sandbox filesystem, so they must
 be moved to R2 to survive a reset.
 
-### Go SDK gaps
+### Go SDK gaps — verified, and better than feared
 
-Daytona's docs show language tabs per method, and **several computer-use methods
-have no Go tab**:
+The Go SDK is `github.com/daytona/clients/sdk-go` (v0.205.0 at time of writing,
+requires Go 1.25.4+). Two gaps were confirmed by reading the SDK, not the docs:
 
-- `screenshot.take_compressed` and `take_compressed_region`
-- `get_process_status`, `restart_process`, `get_process_logs`,
-  `get_process_errors`
+| Missing from the high-level SDK | Consequence |
+|---|---|
+| `ScreenshotService` has only `TakeFullScreen` and `TakeRegion` | No compressed screenshots, which is what keeps E2E affordable |
+| No activity-refresh method (`LastActivityAt` is read-only) | No way to signal "still in use" |
 
-The compressed-screenshot gap is the painful one, since compression is exactly
-what keeps E2E affordable. Every one of these is documented as available via the
-REST API.
+The earlier plan was a hand-rolled REST fallback. That turned out to be
+unnecessary — **both gaps are reachable through the generated clients the SDK is
+built on**, which are typed, already authenticated, and versioned in lockstep:
 
-**Locked approach:** wrap Daytona access in a thin internal client. Use the Go
-SDK where it covers the surface, and call the REST API directly for the gaps,
-behind the same interface. Verify the actual state of the Go SDK before writing
-the fallbacks — the docs may simply be lagging the SDK.
+- **Compressed screenshots:** `Sandbox.ToolboxClient` is a public field, and
+  `ComputerUseAPI.TakeCompressedScreenshot(ctx)` supports `Format`, `Quality`,
+  `Scale` and `ShowCursor`. The high-level SDK simply doesn't surface it, even
+  though `types.ScreenshotOptions` exists.
+- **Activity heartbeat:** the control-plane client
+  (`github.com/daytona/clients/api-client-go`) has
+  `SandboxAPI.UpdateLastActivity`, hitting
+  `POST /sandbox/{id}/last-activity`. The SDK keeps its own copy of this client
+  unexported, so Doot constructs one, mirroring the SDK's own configuration.
+
+**Locked:** all Daytona access sits behind `internal/daytona`. It uses the
+high-level SDK where that covers the surface and drops to the generated clients
+where it doesn't. No hand-written HTTP.
+
+The heartbeat additionally falls back to a cheap Toolbox read
+(`GetWorkingDir`) if the activity endpoint fails, since Toolbox calls also reset
+the inactivity timer. That fallback is a few lines and covers a failure — an
+endpoint or auth change — that would otherwise stay invisible until a sandbox
+died mid-build.
+
+The `DisplayService.GetInfo` helper returns an untyped `map[string]any`, so
+geometry is read through the generated client too: string-keyed guesswork is a
+poor foundation for the numbers every click depends on.
 
 ---
 

@@ -74,6 +74,9 @@
         case 'usage':
           UI.setUsage(data);
           break;
+        case 'sandbox.state':
+          UI.setSandboxState(data);
+          break;
         default:
           /* Handlers for the rendered-fragment events land here as the agent
              loop is built out. */
@@ -148,11 +151,71 @@
       }
     },
 
+    /* Sandbox transitions are slow (snapshot pulls, archive restores), so the
+       state is streamed rather than polled. Reaching a settled state reloads the
+       screen once, because which controls apply is decided server-side. */
+    setSandboxState: function (payload) {
+      var data;
+      try { data = JSON.parse(payload); } catch (_) { return; }
+
+      var el = document.getElementById('sandbox-state');
+      if (el && data.state) {
+        el.textContent = data.state;
+        el.className = 'pill pill-' + data.state;
+      }
+
+      if (data.message) UI.note(data.message);
+
+      var settled = ['started', 'stopped', 'error', ''].indexOf(data.state) !== -1;
+      var onSandboxScreen = window.location.pathname === '/project' ||
+                            window.location.pathname === '/desktop';
+
+      if (settled && onSandboxScreen && !UI._reloading) {
+        UI._reloading = true;
+        /* Small delay so the final message is readable before the reload. */
+        setTimeout(function () { window.location.reload(); }, 900);
+      }
+    },
+
+    /* Transient status line. Deliberately a single replaceable element rather
+       than stacking toasts. */
+    note: function (text) {
+      var el = document.getElementById('live-note');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'live-note';
+        el.className = 'banner banner-nag';
+        document.body.insertBefore(el, document.body.firstChild);
+      }
+      el.textContent = text;
+    },
+
     scrollTimelineToEnd: function () {
       var timeline = document.getElementById('timeline');
       if (timeline) window.scrollTo(0, document.body.scrollHeight);
     }
   };
+
+  /* Read-only desktop by default; the shield only lifts on explicit request. */
+  var takeControl = document.getElementById('take-control');
+  if (takeControl) {
+    takeControl.addEventListener('change', function () {
+      var frame = document.querySelector('.vnc-frame');
+      if (frame) frame.classList.toggle('is-interactive', takeControl.checked);
+    });
+  }
+
+  /* Disable submit buttons once clicked. Sandbox operations are single-flight
+     server-side, so a double tap would only produce a confusing error. */
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    var btn = form.querySelector('button[type=submit]');
+    if (btn) {
+      setTimeout(function () { btn.disabled = true; }, 0);
+      setTimeout(function () { btn.disabled = false; }, 8000);
+    }
+  });
 
   /* Dismissible banners. */
   document.addEventListener('click', function (e) {

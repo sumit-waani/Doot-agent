@@ -9,6 +9,7 @@ import (
 
 	"github.com/sumit-waani/doot/internal/auth"
 	"github.com/sumit-waani/doot/internal/config"
+	"github.com/sumit-waani/doot/internal/project"
 )
 
 // basePage carries what the layout needs on every screen.
@@ -22,30 +23,12 @@ type basePage struct {
 	User             auth.User
 	UsingDefaultPass bool
 	HasProject       bool
+	Flash            string
+	Error            string
 }
 
-// project mirrors the single project row. Every field is optional because the
-// UI must render usefully before a project exists.
-type project struct {
-	Name          string
-	RepoURL       string
-	RepoOwner     string
-	RepoName      string
-	BaseBranch    string
-	WorkBranch    string
-	SetupScript   string
-	DevCommand    string
-	DevPort       int
-	SandboxID     string
-	SandboxState  string
-	SandboxSnap   string
-	VNCResolution string
-	CurrentEpoch  int
-	Exists        bool
-}
-
-func (s *Server) base(ctx context.Context, user auth.User, nav, title string) basePage {
-	p, _ := s.loadProject(ctx)
+func (s *Server) base(ctx context.Context, r *http.Request, user auth.User, nav, title string) basePage {
+	p, _ := s.project.Load(ctx)
 	return basePage{
 		Title:            title,
 		Nav:              nav,
@@ -53,41 +36,16 @@ func (s *Server) base(ctx context.Context, user auth.User, nav, title string) ba
 		User:             user,
 		UsingDefaultPass: s.usingDefaultPass,
 		HasProject:       p.Exists,
+		Flash:            r.URL.Query().Get("ok"),
+		Error:            r.URL.Query().Get("err"),
 	}
-}
-
-// loadProject reads the single project row, if it exists.
-func (s *Server) loadProject(ctx context.Context) (project, error) {
-	const q = `
-SELECT name, repo_url, repo_owner, repo_name, base_branch, work_branch,
-       COALESCE(setup_script,''), COALESCE(dev_command,''), COALESCE(dev_port,0),
-       COALESCE(sandbox_id,''), COALESCE(sandbox_state,''),
-       sandbox_snapshot, vnc_resolution, current_epoch
-  FROM project
- WHERE id = 1`
-
-	var p project
-	err := s.db.QueryRowContext(ctx, q).Scan(
-		&p.Name, &p.RepoURL, &p.RepoOwner, &p.RepoName, &p.BaseBranch, &p.WorkBranch,
-		&p.SetupScript, &p.DevCommand, &p.DevPort,
-		&p.SandboxID, &p.SandboxState,
-		&p.SandboxSnap, &p.VNCResolution, &p.CurrentEpoch,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return project{}, nil
-	}
-	if err != nil {
-		return project{}, err
-	}
-	p.Exists = true
-	return p, nil
 }
 
 // ---------------------------------------------------------------- chat
 
 type chatPage struct {
 	basePage
-	Project   project
+	Project   project.Project
 	RunStatus string
 	Messages  []messageView
 	LastEvent int64
@@ -102,7 +60,7 @@ type messageView struct {
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request, user auth.User) {
 	ctx := r.Context()
 
-	p, err := s.loadProject(ctx)
+	p, err := s.project.Load(ctx)
 	if err != nil {
 		slog.Error("could not load project", "err", err)
 	}
@@ -120,7 +78,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request, user auth.Us
 	}
 
 	page := chatPage{
-		basePage:  s.base(ctx, user, "chat", "Chat"),
+		basePage:  s.base(ctx, r, user, "chat", "Chat"),
 		Project:   p,
 		RunStatus: s.currentRunStatus(ctx),
 		Messages:  messages,
@@ -180,28 +138,39 @@ func (s *Server) currentRunStatus(ctx context.Context) string {
 
 type desktopPage struct {
 	basePage
-	Project project
-	// VNCURL is empty until a sandbox exists with computer-use running.
-	VNCURL string
-	Ready  bool
+	Project project.Project
+	VNCURL  string
+	Ready   bool
+	Busy    string
 }
 
 func (s *Server) handleDesktop(w http.ResponseWriter, r *http.Request, user auth.User) {
 	ctx := r.Context()
 
-	p, err := s.loadProject(ctx)
+	p, err := s.project.Load(ctx)
 	if err != nil {
 		slog.Error("could not load project", "err", err)
 	}
 
 	page := desktopPage{
-		basePage: s.base(ctx, user, "desktop", "Desktop"),
+		basePage: s.base(ctx, r, user, "desktop", "Desktop"),
 		Project:  p,
-		// Wiring this up needs the Daytona client, which is the next phase.
-		// Until then the screen renders its honest placeholder rather than an
-		// empty frame.
-		Ready: false,
+		Busy:     s.project.BusyOp(),
 	}
+
+	// Only issue a preview link when the desktop is actually up. Embedding a
+	// frame that cannot connect looks identical to a broken sandbox.
+	if p.DesktopReady() {
+		url, err := s.project.VNCURL(ctx)
+		if err != nil {
+			slog.Warn("could not get VNC url", "err", err)
+			page.Error = "Could not get a desktop link: " + err.Error()
+		} else {
+			page.VNCURL = url
+			page.Ready = true
+		}
+	}
+
 	s.render.render(w, http.StatusOK, "desktop", page)
 }
 
@@ -209,8 +178,10 @@ func (s *Server) handleDesktop(w http.ResponseWriter, r *http.Request, user auth
 
 type projectPage struct {
 	basePage
-	Project project
-	Usage   usageSummary
+	Project   project.Project
+	Usage     usageSummary
+	Busy      string
+	Heartbeat bool
 }
 
 // usageSummary is the cost breakdown by purpose, which is the one cost question
@@ -231,9 +202,19 @@ type usageRow struct {
 func (s *Server) handleProject(w http.ResponseWriter, r *http.Request, user auth.User) {
 	ctx := r.Context()
 
-	p, err := s.loadProject(ctx)
+	p, err := s.project.Load(ctx)
 	if err != nil {
 		slog.Error("could not load project", "err", err)
+	}
+
+	// Refresh from Daytona when nothing is in flight: auto-stop can stop the
+	// sandbox without Doot being told.
+	if p.HasSandbox() && s.project.BusyOp() == "" && !p.SandboxBusy() {
+		if refreshed, err := s.project.Refresh(ctx); err != nil {
+			slog.Debug("could not refresh sandbox state", "err", err)
+		} else {
+			p = refreshed
+		}
 	}
 
 	usage, err := s.loadUsage(ctx)
@@ -242,9 +223,11 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request, user auth
 	}
 
 	page := projectPage{
-		basePage: s.base(ctx, user, "project", "Project"),
-		Project:  p,
-		Usage:    usage,
+		basePage:  s.base(ctx, r, user, "project", "Project"),
+		Project:   p,
+		Usage:     usage,
+		Busy:      s.project.BusyOp(),
+		Heartbeat: s.project.HeartbeatRunning(),
 	}
 	s.render.render(w, http.StatusOK, "project", page)
 }
@@ -289,7 +272,6 @@ type settingsPage struct {
 	Settings map[string]string
 	Secrets  []secretField
 	Saved    string
-	Error    string
 }
 
 type secretField struct {
@@ -324,7 +306,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request, user aut
 	}
 
 	page := settingsPage{
-		basePage: s.base(ctx, user, "settings", "Settings"),
+		basePage: s.base(ctx, r, user, "settings", "Settings"),
 		Settings: s.cfg.All(),
 		Secrets:  fields,
 		Saved:    r.URL.Query().Get("saved"),
