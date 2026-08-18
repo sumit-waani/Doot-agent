@@ -463,3 +463,46 @@ input:focus, textarea:focus, select:focus {
   }
   .composer { max-width: none; }
 }
+
+
+/* ------------------------------------------------------------------ sandbox */
+
+/* Forms that only wrap a button must not break the surrounding layout. */
+.inline-form { display: inline-flex; margin: 0; }
+.btn-row { flex-wrap: wrap; align-items: center; }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+.mono-block {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 8lh;
+  overflow-y: auto;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+}
+
+.vnc-frame { position: relative; }
+
+/* Read-only shield over the desktop. Swallowing pointer events is the whole
+   point: without it, an accidental tap fights the agent for the mouse. */
+.vnc-shield {
+  position: absolute;
+  inset: 0;
+  cursor: not-allowed;
+  background: transparent;
+}
+.vnc-frame.is-interactive .vnc-shield { display: none; }
+
+/* Sandbox states, reusing the pill vocabulary. */
+.pill-provisioning,
+.pill-creating,
+.pill-cloning,
+.pill-setup,
+.pill-resetting,
+.pill-restoring { background: #1c2740; border-color: #33507f; color: #a8c5f0; }
+.pill-stopped,
+.pill-archived { background: var(--bg-input); border-color: var(--border-strong); color: var(--text-dim); }
+.pill-deleting { background: #3a1d1d; border-color: #6b3129; color: var(--danger); }

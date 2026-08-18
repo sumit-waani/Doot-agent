@@ -2,35 +2,71 @@
 <header class="screen-header">
   <h1>Desktop</h1>
   {{if .Project.SandboxState}}
-  <span class="pill pill-{{.Project.SandboxState}}">{{.Project.SandboxState}}</span>
+  <span class="pill pill-{{.Project.SandboxState}}" id="sandbox-state">{{.Project.SandboxState}}</span>
   {{else}}
-  <span class="pill pill-idle">no sandbox</span>
+  <span class="pill pill-idle" id="sandbox-state">no sandbox</span>
   {{end}}
+  {{if .Busy}}<span class="pill pill-running">{{.Busy}}…</span>{{end}}
 </header>
+
+{{if .Flash}}<p class="alert alert-ok" role="status">{{.Flash}}</p>{{end}}
+{{if .Error}}<p class="alert alert-error" role="alert">{{.Error}}</p>{{end}}
 
 {{if .Ready}}
 <div class="vnc-frame">
-  <iframe src="{{.VNCURL}}" title="Sandbox desktop" allow="clipboard-read; clipboard-write"></iframe>
+  <iframe id="vnc" src="{{.VNCURL}}" title="Sandbox desktop"
+          allow="clipboard-read; clipboard-write"></iframe>
+  <div class="vnc-shield" id="vnc-shield" title="Read-only. Enable Take control to interact."></div>
 </div>
+
 <div class="vnc-controls">
   <label class="toggle">
     <input type="checkbox" id="take-control">
     <span>Take control</span>
   </label>
   <p class="hint">Read-only by default, so you can watch without fighting the agent for the mouse.</p>
+
+  {{if .Project.VNCWidth}}
+  <p class="hint">
+    Framebuffer <code>{{.Project.VNCWidth}}x{{.Project.VNCHeight}}</code>
+    (requested <code>{{.Project.VNCResolution}}</code>). Fixed at creation and not changeable.
+  </p>
+  {{end}}
+
+  <form method="post" action="/desktop/stop" class="inline-form">
+    <button type="submit" class="btn">Stop desktop</button>
+  </form>
 </div>
+
 {{else}}
 <div class="empty">
   <div class="empty-icon" aria-hidden="true">
     <svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 20h6M12 17v3"/></svg>
   </div>
-  <h2>Desktop not running</h2>
+
   {{if not .Project.Exists}}
-  <p>Create a project first. The desktop lives in the same sandbox as the project.</p>
+  <h2>No project yet</h2>
+  <p>The desktop runs in the same sandbox as the project, so there is nothing to show until a project exists.</p>
   <a href="/project" class="btn btn-primary">Create project</a>
+
+  {{else if not .Project.HasSandbox}}
+  <h2>No sandbox yet</h2>
+  <p>The sandbox is still being provisioned, or provisioning failed. Check the Project screen.</p>
+  <a href="/project" class="btn btn-primary">Open Project</a>
+
+  {{else if .Busy}}
+  <h2>Working…</h2>
+  <p>A sandbox operation is running ({{.Busy}}). This screen updates itself when it finishes.</p>
+
   {{else}}
-  <p>Computer-use processes are not running in the sandbox. They do not survive a sandbox stop and need starting again.</p>
-  <button type="button" class="btn btn-primary" id="start-desktop">Start desktop</button>
+  <h2>Desktop not running</h2>
+  <p>
+    Computer-use processes do not survive a sandbox stop, so they need starting again.
+    Starting the desktop will wake the sandbox first if necessary.
+  </p>
+  <form method="post" action="/desktop/start">
+    <button type="submit" class="btn btn-primary">Start desktop</button>
+  </form>
   {{end}}
 </div>
 {{end}}

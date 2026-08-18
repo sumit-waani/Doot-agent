@@ -244,9 +244,16 @@ These stay open until implementation, on purpose:
 - Exact goal-plan JSON schema the model emits (the DB shape is locked; the
   prompt contract is not).
 - System prompt wording and tool descriptions.
-- Daytona signed-preview-URL expiry strategy — needs hands-on testing.
+- Daytona signed-preview-URL expiry strategy — the mechanism is built and the
+  TTL is configurable, but the right value needs real use to settle.
 - Whether the accessibility (AT-SPI) API beats pixel coordinates for E2E
   driving. Suspect yes; unverified.
-- Go SDK gaps in Daytona's computer-use surface (compressed screenshots in
-  particular) and whether a thin REST fallback is needed. See
-  [04-sandbox-and-git.md](./04-sandbox-and-git.md#go-sdk-gaps).
+- **noVNC's port inside the sandbox.** Assumed to be `6080` and configurable via
+  `sandbox.vnc_port`, because Daytona documents the desktop stack but not the
+  port it serves on. Needs confirming against a live sandbox.
+
+### Resolved during implementation
+
+- **Go SDK gaps.** Both were real, and neither needed hand-written HTTP: the
+  generated Toolbox and control-plane clients cover them. See
+  [04-sandbox-and-git.md](./04-sandbox-and-git.md#go-sdk-gaps--verified-and-better-than-feared).

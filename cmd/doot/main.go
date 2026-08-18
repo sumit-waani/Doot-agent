@@ -25,6 +25,7 @@ import (
 	"github.com/sumit-waani/doot/internal/config"
 	"github.com/sumit-waani/doot/internal/db"
 	"github.com/sumit-waani/doot/internal/events"
+	"github.com/sumit-waani/doot/internal/project"
 	"github.com/sumit-waani/doot/internal/secretbox"
 	"github.com/sumit-waani/doot/internal/web"
 )
@@ -106,11 +107,25 @@ func serve(env config.Env) error {
 		return err
 	}
 
+	eventLog := events.NewLog(database)
+
+	projects := project.NewService(database, cfg, eventLog)
+	// Closing releases the Daytona client, including the state-event WebSocket
+	// the SDK keeps open, and stops any sandbox heartbeat.
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := projects.Close(closeCtx); err != nil {
+			slog.Warn("could not close Daytona client cleanly", "err", err)
+		}
+	}()
+
 	server, err := web.NewServer(web.Options{
 		DB:               database,
 		Config:           cfg,
 		Auth:             auth.NewService(database, !env.Dev),
-		Events:           events.NewLog(database),
+		Events:           eventLog,
+		Project:          projects,
 		Dev:              env.Dev,
 		UsingDefaultPass: boot.UsingDefaultPass,
 	})

@@ -17,6 +17,7 @@ import (
 	"github.com/sumit-waani/doot/internal/config"
 	"github.com/sumit-waani/doot/internal/db"
 	"github.com/sumit-waani/doot/internal/events"
+	"github.com/sumit-waani/doot/internal/project"
 )
 
 // Options configures a Server.
@@ -25,19 +26,21 @@ type Options struct {
 	Config           *config.Store
 	Auth             *auth.Service
 	Events           *events.Log
+	Project          *project.Service
 	Dev              bool
 	UsingDefaultPass bool
 }
 
 // Server holds everything the handlers need.
 type Server struct {
-	db     *db.DB
-	cfg    *config.Store
-	auth   *auth.Service
-	events *events.Log
-	render *renderer
-	limit  *auth.LoginLimiter
-	dev    bool
+	db      *db.DB
+	cfg     *config.Store
+	auth    *auth.Service
+	events  *events.Log
+	project *project.Service
+	render  *renderer
+	limit   *auth.LoginLimiter
+	dev     bool
 
 	usingDefaultPass bool
 }
@@ -54,6 +57,7 @@ func NewServer(opts Options) (*Server, error) {
 		cfg:              opts.Config,
 		auth:             opts.Auth,
 		events:           opts.Events,
+		project:          opts.Project,
 		render:           r,
 		limit:            auth.NewLoginLimiter(10, 15*time.Minute),
 		dev:              opts.Dev,
@@ -84,6 +88,23 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /desktop", s.requireAuth(s.handleDesktop))
 	mux.Handle("GET /project", s.requireAuth(s.handleProject))
 	mux.Handle("GET /settings", s.requireAuth(s.handleSettings))
+
+	// Project and sandbox actions. These return immediately; the sandbox work
+	// happens in the background and reports over SSE.
+	mux.Handle("POST /project/create", s.requireAuth(s.handleProjectCreate))
+	mux.Handle("POST /project/update", s.requireAuth(s.handleProjectUpdate))
+	mux.Handle("POST /project/reset", s.requireAuth(s.handleProjectReset))
+	mux.Handle("POST /project/delete", s.requireAuth(s.handleProjectDelete))
+	mux.Handle("POST /project/setup", s.requireAuth(s.handleSetupRun))
+	mux.Handle("POST /sandbox/start", s.requireAuth(s.handleSandboxStart))
+	mux.Handle("POST /sandbox/stop", s.requireAuth(s.handleSandboxStop))
+	mux.Handle("POST /desktop/start", s.requireAuth(s.handleDesktopStart))
+	mux.Handle("POST /desktop/stop", s.requireAuth(s.handleDesktopStop))
+
+	// Settings. Saved per section so a partially-applied section is impossible.
+	mux.Handle("POST /settings/account", s.requireAuth(s.handleSettingsAccount))
+	mux.Handle("POST /settings/secrets", s.requireAuth(s.handleSettingsSecrets))
+	mux.Handle("POST /settings/{section}", s.requireAuth(s.handleSettingsSave))
 
 	// Live updates.
 	mux.Handle("GET /events", s.requireAuth(s.handleSSE))
