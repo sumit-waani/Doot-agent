@@ -1,0 +1,18 @@
+# Build output
+/doot
+/bin/
+/dist/
+
+# Local database files (all real state belongs in Turso)
+*.db
+*.db-wal
+*.db-shm
+/tmp/
+
+# Local environment
+.env
+.env.local
+
+# Editor / OS noise
+.DS_Store
+*.swp

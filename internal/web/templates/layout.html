@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{.Title}} · Doot</title>
+
+  <meta name="theme-color" content="#0b0d10">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Doot">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="{{if .Chrome}}has-chrome{{end}}">
+
+  <div id="offline-banner" class="banner banner-warn" hidden>
+    No connection. Showing the last known state.
+  </div>
+
+  {{if and .Chrome .UsingDefaultPass}}
+  <div id="default-pass-banner" class="banner banner-nag">
+    <span>Still using the default password.</span>
+    <a href="/settings">Change it</a>
+    <button type="button" class="banner-close" data-dismiss="#default-pass-banner" aria-label="Dismiss">&times;</button>
+  </div>
+  {{end}}
+
+  <main class="screen">
+    {{template "content" .}}
+  </main>
+
+  {{if .Chrome}}
+  <nav class="tabbar" aria-label="Main">
+    <a href="/" class="tab {{if eq .Nav "chat"}}is-active{{end}}" aria-current="{{if eq .Nav "chat"}}page{{end}}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.2-4.2A8 8 0 1 1 21 12Z"/></svg>
+      <span>Chat</span>
+    </a>
+    <a href="/desktop" class="tab {{if eq .Nav "desktop"}}is-active{{end}}" aria-current="{{if eq .Nav "desktop"}}page{{end}}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 20h6M12 17v3"/></svg>
+      <span>Desktop</span>
+    </a>
+    <a href="/project" class="tab {{if eq .Nav "project"}}is-active{{end}}" aria-current="{{if eq .Nav "project"}}page{{end}}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2 2 0 0 1 5 5.5h4l2 2.5h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+      <span>Project</span>
+    </a>
+    <a href="/settings" class="tab {{if eq .Nav "settings"}}is-active{{end}}" aria-current="{{if eq .Nav "settings"}}page{{end}}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.4 5.4l2.1 2.1M16.5 16.5l2.1 2.1M18.6 5.4l-2.1 2.1M7.5 16.5l-2.1 2.1"/></svg>
+      <span>Settings</span>
+    </a>
+  </nav>
+  {{end}}
+
+  <script src="/static/js/htmx.min.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
+</body>
+</html>

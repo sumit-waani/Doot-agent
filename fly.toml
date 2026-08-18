@@ -1,0 +1,49 @@
+# Doot on Fly.io.
+#
+# Exactly one always-on machine. Two machines would mean two agent loops racing
+# over one project, and auto-stop would kill a long run mid-flight. No volumes:
+# all state lives in Turso and the machine is treated as disposable.
+
+app = "doot"
+primary_region = "bom"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  DOOT_LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # Both must stay as they are. See the header comment.
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  # One loop, one project, one operator.
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 150
+
+# Checks the database is reachable, not merely that the process is up: a machine
+# that cannot reach Turso cannot do anything useful.
+[[http_service.checks]]
+  grace_period = "20s"
+  interval = "30s"
+  method = "GET"
+  path = "/healthz"
+  timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+# Secrets are set once with `fly secrets set`:
+#   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, DOOT_MASTER_KEY
+# Everything else is configured from the Settings screen. Credentials seeded via
+# DOOT_LLM_API_KEY / DOOT_DAYTONA_API_KEY / DOOT_GITHUB_PAT are optional; they
+# are only read on first boot, after which the encrypted database copy wins.

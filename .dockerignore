@@ -1,0 +1,17 @@
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docs/
+README.md
+
+# Local state and build output must never enter the image.
+*.db
+*.db-wal
+*.db-shm
+tmp/
+bin/
+dist/
+doot
+.env
+.env.local

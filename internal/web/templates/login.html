@@ -1,0 +1,33 @@
+{{define "content"}}
+<div class="auth">
+  <div class="auth-mark" aria-hidden="true"><span></span></div>
+  <h1 class="auth-title">Doot</h1>
+
+  {{if .Error}}
+  <p class="alert alert-error" role="alert">
+    {{.Error}}
+    {{if .RetryAfterMins}}Try again in {{.RetryAfterMins}} minute{{if ne .RetryAfterMins 1}}s{{end}}.{{end}}
+  </p>
+  {{end}}
+
+  <form method="post" action="/login" class="auth-form">
+    <label class="field">
+      <span class="field-label">Username</span>
+      <input type="text" name="username" value="{{.Username}}"
+             autocomplete="username" autocapitalize="none" autocorrect="off"
+             spellcheck="false" required autofocus>
+    </label>
+
+    <label class="field">
+      <span class="field-label">Password</span>
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+
+    <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+  </form>
+
+  {{if .DefaultCreds}}
+  <p class="auth-hint">Default credentials are still active: <code>doot</code> / <code>doot</code></p>
+  {{end}}
+</div>
+{{end}}

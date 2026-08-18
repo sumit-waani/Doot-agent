@@ -1,0 +1,138 @@
+{{define "content"}}
+<header class="screen-header">
+  <h1>Project</h1>
+</header>
+
+{{if not .Project.Exists}}
+<section class="card">
+  <h2 class="card-title">Create project</h2>
+  <p class="card-note">One project at a time. To switch later, delete this one and create another.</p>
+
+  <form method="post" action="/project/create" class="form">
+    <label class="field">
+      <span class="field-label">Name</span>
+      <input type="text" name="name" required autocapitalize="none" spellcheck="false">
+    </label>
+
+    <label class="field">
+      <span class="field-label">Repository URL</span>
+      <input type="url" name="repo_url" placeholder="https://github.com/owner/repo"
+             required autocapitalize="none" autocorrect="off" spellcheck="false">
+    </label>
+
+    <button type="submit" class="btn btn-primary btn-block">Create and provision sandbox</button>
+  </form>
+</section>
+
+{{else}}
+
+<section class="card">
+  <h2 class="card-title">Repository</h2>
+  <dl class="kv">
+    <dt>Name</dt><dd>{{.Project.Name}}</dd>
+    <dt>Repo</dt><dd><a href="{{.Project.RepoURL}}" target="_blank" rel="noopener">{{.Project.RepoOwner}}/{{.Project.RepoName}}</a></dd>
+    <dt>Base branch</dt><dd><code>{{.Project.BaseBranch}}</code></dd>
+    <dt>Work branch</dt><dd><code>{{.Project.WorkBranch}}</code></dd>
+  </dl>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Sandbox</h2>
+  <dl class="kv">
+    <dt>ID</dt><dd><code>{{if .Project.SandboxID}}{{.Project.SandboxID}}{{else}}—{{end}}</code></dd>
+    <dt>State</dt><dd>{{if .Project.SandboxState}}{{.Project.SandboxState}}{{else}}—{{end}}</dd>
+    <dt>Snapshot</dt><dd><code>{{.Project.SandboxSnap}}</code></dd>
+    <dt>Resolution</dt><dd><code>{{.Project.VNCResolution}}</code></dd>
+  </dl>
+  <p class="card-note">Resolution is fixed when the sandbox is created and cannot be changed afterwards.</p>
+
+  <div class="btn-row">
+    <button type="button" class="btn" id="sandbox-start">Start</button>
+    <button type="button" class="btn" id="sandbox-stop">Stop</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Build &amp; run</h2>
+  <form method="post" action="/project/update" class="form">
+    <label class="field">
+      <span class="field-label">Setup script</span>
+      <textarea name="setup_script" rows="4" spellcheck="false"
+                placeholder="Installs dependencies inside the sandbox">{{.Project.SetupScript}}</textarea>
+    </label>
+
+    <div class="field-row">
+      <label class="field">
+        <span class="field-label">Dev command</span>
+        <input type="text" name="dev_command" value="{{.Project.DevCommand}}" spellcheck="false">
+      </label>
+      <label class="field field-narrow">
+        <span class="field-label">Port</span>
+        <input type="number" name="dev_port" value="{{if .Project.DevPort}}{{.Project.DevPort}}{{end}}" min="1" max="65535">
+      </label>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Usage</h2>
+  {{if .Usage.Rows}}
+  <table class="table">
+    <thead>
+      <tr><th>Purpose</th><th class="num">Calls</th><th class="num">In</th><th class="num">Out</th><th class="num">Cost</th></tr>
+    </thead>
+    <tbody>
+      {{range .Usage.Rows}}
+      <tr>
+        <td>{{.Purpose}}</td>
+        <td class="num">{{.Calls}}</td>
+        <td class="num">{{.PromptTokens}}</td>
+        <td class="num">{{.CompletionTokens}}</td>
+        <td class="num">${{printf "%.4f" .CostUSD}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td>Total</td>
+        <td class="num">{{.Usage.Total.Calls}}</td>
+        <td class="num">{{.Usage.Total.PromptTokens}}</td>
+        <td class="num">{{.Usage.Total.CompletionTokens}}</td>
+        <td class="num">${{printf "%.4f" .Usage.Total.CostUSD}}</td>
+      </tr>
+    </tfoot>
+  </table>
+  {{else}}
+  <p class="card-note">No model calls recorded yet.</p>
+  {{end}}
+</section>
+
+<section class="card card-danger">
+  <h2 class="card-title">Danger zone</h2>
+
+  <div class="danger-item">
+    <div>
+      <strong>Reset sandbox</strong>
+      <p>Destroys the sandbox and rebuilds it from the repo. Uncommitted work is lost. Does not touch the conversation.</p>
+    </div>
+    <button type="button" class="btn btn-danger" data-confirm="Reset the sandbox? Uncommitted work will be lost.">Reset</button>
+  </div>
+
+  <div class="danger-item">
+    <div>
+      <strong>Delete project</strong>
+      <p>Destroys the sandbox and clears the project. Conversation history and audit logs are kept.</p>
+    </div>
+    <button type="button" class="btn btn-danger" data-confirm="Delete this project? The sandbox will be destroyed.">Delete</button>
+  </div>
+</section>
+{{end}}
+
+<section class="card card-quiet">
+  <form method="post" action="/logout">
+    <button type="submit" class="btn btn-block">Sign out</button>
+  </form>
+</section>
+{{end}}
