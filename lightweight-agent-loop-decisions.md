@@ -15,8 +15,6 @@ heavily-patched, framework-less FastAPI loop that's still working — **build a
 new, separate, minimal loop for light work.** Kaptaan stays untouched.
 
 ## Non-Goals
-
-- No rewriting or refactoring kaptaan.
 - No multi-agent orchestrator complexity for the new loop (see Agent
   Architecture below — 1 primary + 2 focused subagents, not a swarm).
 - No "sessions" concept. No conversation-per-session sprawl.
