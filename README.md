@@ -83,7 +83,32 @@ startup, so deploying is the only step.
 
 Icons are generated, not committed by hand: `go run ./tools/genicons`.
 
-## Exercising the agent loop without spending money
+## Local testing
+
+Two stub servers, because the two things Doot depends on are the two things you
+cannot exercise offline.
+
+### The database, over the real wire protocol
+
+`tools/hranastub` is a minimal Hrana v2 server backed by a local SQLite file.
+
+Point `TURSO_DATABASE_URL` at it and the **production driver** is used —
+`libsql-client-go` over HTTP, with the baton and stream semantics Turso really
+has. A local file path uses a different driver entirely, so it cannot catch bugs
+in that seam. One already reached production this way:
+
+```sh
+python3 tools/hranastub/stub.py 8301 ./local.db
+TURSO_DATABASE_URL=http://127.0.0.1:8301 TURSO_AUTH_TOKEN=x \
+  DOOT_MASTER_KEY=$(go run ./cmd/doot genkey) go run ./cmd/doot serve
+```
+
+**Anything touching transactions should be checked this way before deploying.**
+In particular, never pin a `sql.Conn` and issue `BEGIN` by hand: over Hrana a
+request that leaves no transaction open returns no baton, the driver marks that
+connection dead, and a pinned connection gets no retry. Use `db.BeginTx`.
+
+### The model
 
 `tools/stubllm` is a scripted OpenAI-compatible server. It streams responses from
 a JSON scenario in the same SSE shape the real API uses, so the loop's control
