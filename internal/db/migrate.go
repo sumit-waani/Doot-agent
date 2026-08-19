@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed migrations/*.sql
@@ -31,8 +32,8 @@ type migration struct {
 // Properties, per docs/02-database.md:
 //   - Runs on every boot. Deploying is the only action required.
 //   - Idempotent: applied versions are skipped by version number.
-//   - Transactional per file, under BEGIN IMMEDIATE so two machines booting at
-//     once (as happens briefly during a deploy) cannot double-apply.
+//   - Transactional per file, claiming the version up front so two machines
+//     booting at once (as happens briefly during a deploy) cannot double-apply.
 //   - Forward-only. There are no down migrations.
 //   - Checksummed: editing an already-applied file is a startup error, because
 //     it means schema history was rewritten.
@@ -62,10 +63,13 @@ func Migrate(ctx context.Context, d *DB) error {
 			}
 			continue
 		}
-		if err := applyMigration(ctx, d, m); err != nil {
+		applied, err := applyMigrationWithRetry(ctx, d, m)
+		if err != nil {
 			return err
 		}
-		slog.Info("migration applied", "version", m.Version, "name", m.Name)
+		if applied {
+			slog.Info("migration applied", "version", m.Version, "name", m.Name)
+		}
 	}
 
 	return nil
@@ -106,48 +110,179 @@ func appliedMigrations(ctx context.Context, d *DB) (map[int]string, error) {
 	return out, rows.Err()
 }
 
-// applyMigration runs one file inside an immediate transaction.
-//
-// BEGIN/COMMIT are issued manually on a single pinned connection rather than
-// via sql.Tx, because database/sql offers no way to request IMMEDIATE and the
-// write lock it takes is the whole point.
-func applyMigration(ctx context.Context, d *DB, m migration) error {
-	conn, err := d.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("db: acquire connection for migration %04d: %w", m.Version, err)
-	}
-	defer conn.Close()
+// migrationLockAttempts bounds how long we wait for a peer holding the write
+// lock. Deploys overlap for seconds, not minutes.
+const migrationLockAttempts = 6
 
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+// applyMigrationWithRetry applies one migration, waiting out a peer that holds
+// the write lock.
+//
+// Two machines briefly overlap on every deploy, and only one can hold the write
+// lock. Without this the loser exits, Fly restarts it, and the rollover carries a
+// crash for no reason: a transient lock is expected here, not exceptional.
+//
+// Reports whether this process was the one that applied it.
+func applyMigrationWithRetry(ctx context.Context, d *DB, m migration) (bool, error) {
+	delay := 250 * time.Millisecond
+
+	for attempt := 1; ; attempt++ {
+		err := applyMigration(ctx, d, m)
+		if err == nil {
+			return true, nil
+		}
+		if !isLocked(err) {
+			return false, err
+		}
+
+		// The peer may have finished while we were waiting.
+		if done, checkErr := alreadyApplied(ctx, d, m); checkErr == nil && done {
+			slog.Info("migration applied by another process while waiting",
+				"version", m.Version, "name", m.Name)
+			return false, nil
+		}
+
+		if attempt >= migrationLockAttempts {
+			return false, fmt.Errorf(
+				"db: migration %04d (%s) could not get the write lock after %d attempts: %w",
+				m.Version, m.Name, attempt, err)
+		}
+
+		slog.Warn("migration is waiting for the database write lock",
+			"version", m.Version, "attempt", attempt, "retry_in", delay.String())
+
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(delay):
+		}
+		delay *= 2
+	}
+}
+
+// alreadyApplied reports whether this exact migration is now recorded.
+func alreadyApplied(ctx context.Context, d *DB, m migration) (bool, error) {
+	applied, err := appliedMigrations(ctx, d)
+	if err != nil {
+		return false, err
+	}
+	recorded, ok := applied[m.Version]
+	if !ok {
+		return false, nil
+	}
+	if recorded != m.Checksum {
+		return false, fmt.Errorf(
+			"db: migration %04d (%s) was applied elsewhere with a different checksum "+
+				"(recorded %s, embedded %s)",
+			m.Version, m.Name, short(recorded), short(m.Checksum))
+	}
+	return true, nil
+}
+
+// isLocked reports whether err is a transient write-lock contention error.
+// Matched on the message because neither driver exposes a sentinel for it.
+func isLocked(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database table is locked") ||
+		strings.Contains(msg, "sqlite_busy") ||
+		strings.Contains(msg, "is busy")
+}
+
+// applyMigration runs one file in a single transaction.
+//
+// Two constraints shape this, both learned the hard way:
+//
+//  1. It must use sql.Tx, never a pinned sql.Conn with a hand-written BEGIN.
+//     Over Hrana-HTTP a request that leaves no transaction open returns no
+//     baton, and the driver then marks that connection dead. database/sql
+//     silently retries such a connection for pool-level calls, which is why
+//     Exec and Query work — but a pinned sql.Conn gets no retry, so the raw
+//     BEGIN failed with "stream is closed: driver: bad connection" against
+//     Turso while passing against an embedded driver locally.
+//
+//  2. Statements are executed one at a time, because the libSQL HTTP driver
+//     does not accept multiple statements per Exec.
+//
+// The version is claimed *before* the migration body runs. That is deliberate:
+// the INSERT turns the transaction into a write transaction straight away, which
+// is the portable equivalent of BEGIN IMMEDIATE, and it makes the claim atomic
+// so an overlapping deploy fails fast on the primary key instead of racing to
+// the commit. If the migration body then fails, the rollback releases the claim.
+func applyMigration(ctx context.Context, d *DB, m migration) error {
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
 		return fmt.Errorf("db: begin migration %04d: %w", m.Version, err)
 	}
+	defer tx.Rollback()
 
-	rollback := func(cause error) error {
-		if _, rbErr := conn.ExecContext(ctx, "ROLLBACK"); rbErr != nil {
-			return errors.Join(cause, fmt.Errorf("rollback failed: %w", rbErr))
+	const claim = `INSERT INTO schema_migrations (version, name, checksum) VALUES (?, ?, ?)`
+	if _, err := tx.ExecContext(ctx, claim, m.Version, m.Name, m.Checksum); err != nil {
+		if isConstraintViolation(err) {
+			// Another process claimed this version between our read and now,
+			// which happens when two machines overlap during a deploy.
+			return confirmPeerApplied(ctx, d, m, err)
 		}
-		return cause
+		return fmt.Errorf("db: claim migration %04d: %w", m.Version, err)
 	}
 
-	// Statements are executed one at a time: the libsql HTTP driver does not
-	// accept multiple statements per Exec.
 	for i, stmt := range splitStatements(m.SQL) {
-		if _, err := conn.ExecContext(ctx, stmt); err != nil {
-			return rollback(fmt.Errorf(
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf(
 				"db: migration %04d (%s) statement %d failed: %w\n--- statement ---\n%s",
-				m.Version, m.Name, i+1, err, stmt))
+				m.Version, m.Name, i+1, err, stmt)
 		}
 	}
 
-	const record = `INSERT INTO schema_migrations (version, name, checksum) VALUES (?, ?, ?)`
-	if _, err := conn.ExecContext(ctx, record, m.Version, m.Name, m.Checksum); err != nil {
-		return rollback(fmt.Errorf("db: record migration %04d: %w", m.Version, err))
-	}
-
-	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
-		return rollback(fmt.Errorf("db: commit migration %04d: %w", m.Version, err))
+	if err := tx.Commit(); err != nil {
+		if isConstraintViolation(err) {
+			return confirmPeerApplied(ctx, d, m, err)
+		}
+		return fmt.Errorf("db: commit migration %04d: %w", m.Version, err)
 	}
 	return nil
+}
+
+// confirmPeerApplied checks whether another process applied this exact
+// migration, so an overlapping deploy resolves quietly instead of crash-looping.
+func confirmPeerApplied(ctx context.Context, d *DB, m migration, cause error) error {
+	applied, err := appliedMigrations(ctx, d)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+
+	recorded, ok := applied[m.Version]
+	if !ok {
+		// The conflict was not this version being taken, so it is a real error.
+		return fmt.Errorf("db: claim migration %04d: %w", m.Version, cause)
+	}
+	if recorded != m.Checksum {
+		return fmt.Errorf(
+			"db: migration %04d (%s) was applied elsewhere with a different checksum "+
+				"(recorded %s, embedded %s)",
+			m.Version, m.Name, short(recorded), short(m.Checksum))
+	}
+
+	slog.Info("migration already applied by another process; continuing",
+		"version", m.Version, "name", m.Name)
+	return nil
+}
+
+// isConstraintViolation reports whether err is a uniqueness or primary key
+// conflict. Matched on the message because the two drivers report it with
+// different error types and neither exposes a sentinel.
+func isConstraintViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint") ||
+		strings.Contains(msg, "unique_violation") ||
+		strings.Contains(msg, "primary key") ||
+		strings.Contains(msg, "sqlite_constraint_primarykey") ||
+		strings.Contains(msg, "constraint failed")
 }
 
 // loadMigrations reads and sorts the embedded files.

@@ -75,6 +75,8 @@ fresh.
 | LLM | **Muse Spark 1.2** (Meta Model API) | One model for everything |
 | LLM SDK | **OpenAI SDK**, custom base URL | Meta Model API is OpenAI-compatible |
 | Database | **Turso** (libSQL/SQLite) | Cloud-hosted, so Fly disk is irrelevant |
+| DB driver (remote) | `libsql-client-go` | Turso's recommended pure-Go remote client |
+| DB driver (local file) | `modernc.org/sqlite` | Pure Go, so the binary stays static |
 | Object storage | **Cloudflare R2** | Screenshots + screen recordings from computer-use |
 | Sandbox | **Daytona** | Persistent sandbox + native computer-use |
 | Hosting | **Fly.io**, single always-on machine | See [Deployment](#7-deployment) |
@@ -87,6 +89,24 @@ about, one price to track.
 
 **No volumes.** Not one. If the machine dies mid-run, nothing of value is on
 it. This is a load-bearing property, not an optimization.
+
+### Two database drivers, and what that costs
+
+Production talks to Turso over Hrana-HTTP via `libsql-client-go`. A local file
+path uses `modernc.org/sqlite` instead, which is what makes it possible to run
+and verify the binary without a Turso account.
+
+The cost of that split is real and was paid once: the two drivers have different
+transaction semantics, so a migration runner that worked locally failed on the
+first deploy. Turso's own embedded driver (`turso-go`) would not have helped —
+the difference is the *network protocol*, not the engine, and no embedded driver
+has batons or streams.
+
+The mitigation is therefore not a different driver but a stub that speaks the
+real protocol: see `tools/hranastub`. Anything touching transactions is checked
+against it before deploying. The rule that follows: **only use database APIs that
+behave identically on both** — `db.BeginTx`, never a pinned `sql.Conn` with a
+hand-written `BEGIN`.
 
 ---
 
